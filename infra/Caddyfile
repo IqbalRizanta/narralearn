@@ -1,0 +1,15 @@
+# Optional production TLS front. Put this in front of the web/api services.
+# Set DOMAIN to your real domain and point DNS at the host.
+{$DOMAIN:localhost} {
+    encode zstd gzip
+
+    handle /api/* {
+        reverse_proxy api:8000
+    }
+    handle /ws/* {
+        reverse_proxy api:8000
+    }
+    handle {
+        reverse_proxy web:80
+    }
+}

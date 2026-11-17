@@ -1,0 +1,143 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: narralearn
+      POSTGRES_PASSWORD: narralearn
+      POSTGRES_DB: narralearn
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U narralearn -d narralearn"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+    ports:
+      - "5432:5432"
+
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+    ports:
+      - "6379:6379"
+
+  api:
+    build:
+      context: ./backend
+    environment:
+      ENVIRONMENT: production
+      DEBUG: "false"
+      LOG_LEVEL: INFO
+      ENABLE_DOCS: "true"
+      FRONTEND_URL: http://localhost:8080
+      DATABASE_URL: postgresql+asyncpg://narralearn:narralearn@postgres:5432/narralearn
+      REDIS_URL: redis://redis:6379/0
+      QUEUE_MODE: arq
+      AUTO_CREATE_TABLES: "true"
+      JWT_SECRET: ${JWT_SECRET:-dev-only-change-me-before-deploying}
+      COOKIE_SECURE: "false"
+      UPLOAD_DIR: /data/uploads
+      AI_PROVIDER: ${AI_PROVIDER:-mock}
+      STT_PROVIDER: ${STT_PROVIDER:-mock}
+      VOICE_PROVIDER: ${VOICE_PROVIDER:-heuristic}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      GEMINI_MODEL: ${GEMINI_MODEL:-gemini-3.5-flash}
+      GEMINI_FALLBACK_MODEL: ${GEMINI_FALLBACK_MODEL:-gemini-3.1-flash-lite}
+      CORS_ORIGINS: '["http://localhost:8080","http://localhost:5173"]'
+    volumes:
+      - uploads:/data/uploads
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    ports:
+      - "8000:8000"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/healthz')"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+
+  worker:
+    build:
+      context: ./backend
+    command: ["arq", "app.workers.settings.WorkerSettings"]
+    environment:
+      ENVIRONMENT: production
+      DEBUG: "false"
+      LOG_LEVEL: INFO
+      DATABASE_URL: postgresql+asyncpg://narralearn:narralearn@postgres:5432/narralearn
+      REDIS_URL: redis://redis:6379/0
+      QUEUE_MODE: arq
+      AUTO_CREATE_TABLES: "false"
+      JWT_SECRET: ${JWT_SECRET:-dev-only-change-me-before-deploying}
+      UPLOAD_DIR: /data/uploads
+      AI_PROVIDER: ${AI_PROVIDER:-mock}
+      STT_PROVIDER: ${STT_PROVIDER:-mock}
+      VOICE_PROVIDER: ${VOICE_PROVIDER:-heuristic}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      GEMINI_MODEL: ${GEMINI_MODEL:-gemini-3.5-flash}
+      GEMINI_FALLBACK_MODEL: ${GEMINI_FALLBACK_MODEL:-gemini-3.1-flash-lite}
+      VOICE_MODEL_DIR: /models/speechbrain
+      WHISPER_MODEL: ${WHISPER_MODEL:-small}
+      WHISPER_DEVICE: ${WHISPER_DEVICE:-cpu}
+      WHISPER_COMPUTE_TYPE: ${WHISPER_COMPUTE_TYPE:-int8}
+    volumes:
+      - uploads:/data/uploads
+      - models:/models
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  worker-interactive:
+    build:
+      context: ./backend
+    command: ["arq", "app.workers.settings.InteractiveWorkerSettings"]
+    environment:
+      ENVIRONMENT: production
+      DEBUG: "false"
+      LOG_LEVEL: INFO
+      DATABASE_URL: postgresql+asyncpg://narralearn:narralearn@postgres:5432/narralearn
+      REDIS_URL: redis://redis:6379/0
+      QUEUE_MODE: arq
+      AUTO_CREATE_TABLES: "false"
+      JWT_SECRET: ${JWT_SECRET:-dev-only-change-me-before-deploying}
+      UPLOAD_DIR: /data/uploads
+      AI_PROVIDER: ${AI_PROVIDER:-mock}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      GEMINI_MODEL: ${GEMINI_MODEL:-gemini-3.5-flash}
+      GEMINI_FALLBACK_MODEL: ${GEMINI_FALLBACK_MODEL:-gemini-3.1-flash-lite}
+      VOICE_PROVIDER: ${VOICE_PROVIDER:-heuristic}
+    volumes:
+      - uploads:/data/uploads
+      - models:/models
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  web:
+    build:
+      context: ./frontend
+    ports:
+      - "8080:80"
+    depends_on:
+      api:
+        condition: service_healthy
+
+volumes:
+  pgdata:
+  redisdata:
+  uploads:
+  models:

@@ -1,0 +1,9 @@
+node_modules
+dist
+dev-dist
+coverage
+.vite
+.vite-temp
+npm-debug.log*
+.env
+.env.*
